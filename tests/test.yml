@@ -1,0 +1,4 @@
+---
+- hosts: localhost
+  roles:
+    - ocp_modign_ova_deploy 

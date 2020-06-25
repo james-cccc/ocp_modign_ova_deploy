@@ -1,0 +1,15 @@
+---
+# tasks file 
+
+- name: Create output directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: 0775
+  with_items:
+    - "{{ output_directory }}/ignitions"
+    - "{{ output_directory }}/ifcfgs"
+    - "{{ output_directory }}/b64ignitions"
+
+- import_tasks: tasks/bootstrap.yml
+- import_tasks: tasks/nodes.yml

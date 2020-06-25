@@ -1,0 +1,61 @@
+---
+# tasks file for the creation of master and worker nodes
+
+- name: Get base64 encoded CA string
+  command: grep -oP 'base64,\K[^"]+' {{ ign_directory }}/master.ign
+  register: base64castring
+
+- name: Generate nodes network configuration files
+  template:
+    src: ifcfg-ens192.j2
+    dest: "{{ output_directory }}/ifcfgs/{{ item.hostname }}.ifcfg"
+  with_items: "{{ nodes }}"
+
+- name: Generate nodes modified ignition files
+  template:
+    src: node-ign.j2
+    dest: "{{ output_directory }}/ignitions/{{ item.hostname }}.ign"
+  with_items: "{{ nodes }}"
+
+- name: Create nodes base64 encoded versions of the modified ignition files
+  copy:
+    content: "{{ lookup('file', '{{ output_directory }}/ignitions/{{ item.hostname }}.ign') | b64encode }}"
+    dest: "{{ output_directory }}/b64ignitions/{{ item.hostname }}.64"
+  with_items: "{{ nodes }}"
+
+- name: Provision node VMs using OVA
+  vmware_deploy_ovf:
+    hostname: "{{ esxi_host }}"
+    username: "{{ esxi_user }}"
+    password: "{{ esxi_pass }}"
+    datacenter: "{{ esxi_dc }}"
+    datastore: "{{ esxi_datastore }}"
+    validate_certs: false
+    ovf: "{{ ova_path }}"
+    name: "{{ item.hostname }}"
+    power_on: false
+    inject_ovf_env: true
+    properties:
+      guestinfo.ignition.config.data.encoding: "base64"
+      guestinfo.ignition.config.data: "{{ lookup('file', '{{ output_directory }}/ignitions/{{ item.hostname }}.ign') | b64encode }}"
+  delegate_to: localhost
+  with_items: "{{ nodes }}"
+
+- name: Reconfigure nodes CPU, RAM and HDD sizes of VMs
+  vmware_guest:
+    hostname: "{{ esxi_host }}"
+    username: "{{ esxi_user }}"
+    password: "{{ esxi_pass }}"
+    datacenter: "{{ esxi_dc }}"
+    datastore: "{{ esxi_datastore }}"
+    validate_certs: false
+    name: "{{ item.hostname }}"
+    state: "present"
+    hardware:
+      memory_mb: "16384"
+      num_cpus: "4"
+    disk:
+      - size_gb: 60
+        type: thin
+  delegate_to: "localhost"
+  with_items: "{{ nodes }}"

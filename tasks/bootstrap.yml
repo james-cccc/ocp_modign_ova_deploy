@@ -1,0 +1,57 @@
+---
+# tasks file for bootstrap creation
+
+- name: Generate bootstrap network configuration file
+  template:
+    src: ifcfg-ens192.j2
+    dest: "{{ output_directory }}/ifcfgs/{{ item.hostname }}.ifcfg"
+  with_items: "{{ bootstrap }}"
+
+- name: Generate bootstrap modified ignition file
+  template:
+    src: append-bootstrap-ign.j2
+    dest: "{{ output_directory }}/ignitions/{{ item.hostname }}.ign"
+  with_items: "{{ bootstrap }}"
+
+- name: Create bootstrap base64 encoded version of the modified ignition file
+  copy:
+    content: "{{ lookup('file', '{{ output_directory }}/ignitions/{{item.hostname}}.ign') | b64encode }}"
+    dest: "{{ output_directory }}/b64ignitions/{{ item.hostname }}.64"
+  with_items: "{{ bootstrap }}"
+
+- name: Provision bootstrap VM using OVA
+  vmware_deploy_ovf:
+    hostname: "{{ esxi_host }}"
+    username: "{{ esxi_user }}"
+    password: "{{ esxi_pass }}"
+    datacenter: "{{ esxi_dc }}"
+    datastore: "{{ esxi_datastore }}"
+    validate_certs: false
+    ovf: "{{ ova_path }}"
+    name: "{{ item.hostname }}"
+    power_on: false
+    inject_ovf_env: true
+    properties:
+      guestinfo.ignition.config.data.encoding: "base64"
+      guestinfo.ignition.config.data: "{{ lookup('file', '{{ output_directory }}/ignitions/{{item.hostname}}.ign') | b64encode }}"
+  delegate_to: localhost
+  with_items: "{{ bootstrap }}"
+
+- name: Reconfigure bootstrap CPU, RAM and HDD size of VM
+  vmware_guest:
+    hostname: "{{ esxi_host }}"
+    username: "{{ esxi_user }}"
+    password: "{{ esxi_pass }}"
+    datacenter: "{{ esxi_dc }}"
+    datastore: "{{ esxi_datastore }}"
+    validate_certs: false
+    name: "{{ item.hostname }}"
+    state: "present"
+    hardware:
+      memory_mb: "16384"
+      num_cpus: "4"
+    disk:
+      - size_gb: 60
+        type: thin
+  delegate_to: "localhost"
+  with_items: "{{ bootstrap }}"
